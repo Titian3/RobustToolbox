@@ -22,6 +22,7 @@
  * PhysicsComponent is heavily modified from Box2D.
  */
 
+using System;
 using System.Numerics;
 using Robust.Shared.GameObjects;
 using Robust.Shared.GameStates;
@@ -693,4 +694,59 @@ public partial class SharedPhysicsSystem
     {
         // See client-side system
     }
+
+    /// <summary>
+    /// Tries to get the smallest sized shape for the aabb to calculate if it could fit in a container at the perfect angle.
+    /// </summary>
+    /// <param name="numAngles">Number of angles to test. Defaults to 12 (every 30 degrees).</param>
+    public Box2 GetSmallestDimensionAABB(EntityUid uid, FixturesComponent? manager = null, PhysicsComponent? body = null, TransformComponent? xform = null, int numAngles = 12)
+    {
+        Box2 smallestDimBounds = new Box2(Vector2.One * float.MaxValue, Vector2.One * -float.MaxValue);
+        float smallestWidth = float.MaxValue;
+        float smallestHeight = float.MaxValue;
+        float deltaTheta = (float)(2 * Math.PI / numAngles); // Calculates the step based on number of angles
+
+        for (float theta = 0f; theta < 2 * Math.PI; theta += deltaTheta) // Loop from 0 to 2*PI to cover all rotations in radians.
+        {
+            Box2 currentBounds = GetWorldAABBWithRotation(uid, theta, manager, body, xform);
+            float width = currentBounds.TopRight.X - currentBounds.BottomLeft.X;
+            float height = currentBounds.TopRight.Y - currentBounds.BottomLeft.Y;
+
+            if (width < smallestWidth && height < smallestHeight)
+            {
+                smallestWidth = width;
+                smallestHeight = height;
+                smallestDimBounds = currentBounds;
+            }
+        }
+
+        return smallestDimBounds;
+    }
+
+    /// <summary>
+    /// Get an overriden rotation result to test all the possible angles.
+    /// </summary>
+    public Box2 GetWorldAABBWithRotation(EntityUid uid, float rotationTheta, FixturesComponent? manager = null, PhysicsComponent? body = null, TransformComponent? xform = null)
+    {
+        if (!Resolve(uid, ref manager, ref body, ref xform))
+            return new Box2();
+
+        var (worldPos, _) = _transform.GetWorldPositionRotation(xform, GetEntityQuery<TransformComponent>()); // Ignoring the original rotation since we are providing it
+
+        var transform = new Transform(worldPos, rotationTheta);
+
+        var bounds = new Box2(transform.Position, transform.Position);
+
+        foreach (var fixture in manager.Fixtures.Values)
+        {
+            for (var i = 0; i < fixture.Shape.ChildCount; i++)
+            {
+                var boundy = fixture.Shape.ComputeAABB(transform, i);
+                bounds = bounds.Union(boundy);
+            }
+        }
+
+        return bounds;
+    }
+
 }
